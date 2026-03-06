@@ -161,39 +161,47 @@ Train loss dao động mạnh, xuất hiện các đỉnh cao (1.22 ở epoch 15
 
 ## 5. Nhận xét
 
-### 5.1. Adam: mini-batch vs full-batch
+### 5.1. Adam
 
-Adam mini-batch đạt accuracy cao nhất (70.70%), hội tụ nhanh nhưng overfitting nặng (train loss 0.002, val loss 1.80). Adam full-batch hội tụ chậm hơn (67.10% sau 56 epoch) nhưng ổn định hơn — gap giữa train loss (0.432) và val loss (0.666) nhỏ hơn nhiều so với mini-batch. Nguyên nhân: mini-batch cập nhật trọng số 31 lần/epoch (tổng 1240 bước trong 40 epoch), trong khi full-batch chỉ cập nhật 60 lần (60 epoch × 1 bước). Số bước cập nhật lớn hơn giúp Adam mini-batch hội tụ nhanh, nhưng cũng dễ overfitting trên tập nhỏ.
+- **Mini-batch**: accuracy 70.70%, hội tụ nhanh (best ở epoch 19)
+  - Train loss: 0.692 → 0.002 (giảm mạnh)
+  - Val loss: 0.65 → 1.80 (tăng → overfitting nặng)
+  - Cập nhật trọng số ~31 lần/epoch → tổng ~1240 bước trong 40 epoch
+- **Full-batch**: accuracy 67.10%, hội tụ chậm hơn (best ở epoch 56)
+  - Train loss: 0.694 → 0.432 (giảm đều)
+  - Val loss: 0.695 → 0.666 (ổn định → overfitting nhẹ)
+  - Cập nhật trọng số 1 lần/epoch → tổng 60 bước
+- **Nhận xét**: mini-batch hội tụ nhanh hơn nhờ nhiều bước cập nhật, nhưng dễ overfitting trên tập nhỏ. Full-batch ổn định hơn, gap train-val loss nhỏ.
 
-### 5.2. QuickProp: không hiệu quả ở cả hai chế độ
+### 5.2. QuickProp
 
-QuickProp mini-batch đạt 54.20%, full-batch đạt 52.70%. Trái với kỳ vọng, full-batch không cải thiện QuickProp mà kết quả còn kém hơn. Train loss trong chế độ full-batch dao động mạnh (lệch lên 1.22, 1.28) cho thấy bước cập nhật QuickProp không ổn định: xấp xỉ parabol trên toàn bộ loss landscape của LSTM có thể cho bước nhảy quá lớn, dẫn đến loss tăng đột ngột. Cơ chế clamp ($|\Delta w| \leq 5.0$) chưa đủ để kiểm soát hiện tượng này.
-
-Trong chế độ mini-batch, noise từ sampling ngẫu nhiên có tác dụng như một dạng regularization ngầm, hạn chế bước nhảy lớn. Tuy nhiên, QuickProp vẫn không hội tụ được do xấp xỉ parabol không phù hợp với loss landscape phức tạp, phi lồi của LSTM.
+- **Mini-batch**: accuracy 54.20% (best ở epoch 27)
+  - Train loss: dao động 0.69–0.71, gần như không giảm
+  - Val accuracy: dao động 50–54%
+- **Full-batch**: accuracy 52.70% (best ở epoch 30)
+  - Train loss: dao động mạnh, xuất hiện đỉnh 1.22 (epoch 15), 1.28 (epoch 32)
+  - Val loss: bất ổn, dao động 0.69–1.27
+- **Nhận xét**: QuickProp không hội tụ ở cả hai chế độ. Full-batch không cải thiện mà còn kém hơn mini-batch.
 
 ### 5.3. Nguyên nhân QuickProp kém trên LSTM
 
-1. **Loss landscape phi lồi**: LSTM có loss landscape phức tạp với nhiều điểm yên ngựa và cực tiểu địa phương. Xấp xỉ parabol chỉ chính xác trong vùng lân cận nhỏ, không phản ánh được cấu trúc toàn cục.
-2. **Số chiều lớn**: mô hình có ~180.000 tham số. QuickProp xấp xỉ parabol độc lập cho từng tham số, bỏ qua tương tác giữa các tham số (off-diagonal Hessian).
-3. **Thiếu cơ chế ổn định**: Adam có exponential moving average cho cả gradient và bình phương gradient, giúp ổn định bước cập nhật. QuickProp chỉ dựa trên 2 gradient liên tiếp, rất nhạy cảm với nhiễu.
-4. **Gradient vanishing/exploding trong LSTM**: gradient qua nhiều time step có thể thay đổi biên độ lớn, khiến tỷ số $\frac{g_t}{g_{t-1} - g_t}$ không ổn định.
+- **Loss landscape phi lồi**: LSTM có nhiều điểm yên ngựa và cực tiểu địa phương → xấp xỉ parabol chỉ chính xác trong vùng lân cận nhỏ
+- **Thiếu cơ chế ổn định**: Adam dùng exponential moving average, QuickProp chỉ dựa trên 2 gradient liên tiếp → nhạy cảm với nhiễu
+- **Gradient vanishing/exploding**: gradient qua nhiều time step thay đổi biên độ lớn → tỷ số $\frac{g_t}{g_{t-1} - g_t}$ không ổn định
+
 
 ### 5.4. Overfitting
 
-Adam mini-batch có overfitting rõ rệt: train loss giảm xuống 0.002 nhưng val loss tăng lên 1.80. Adam full-batch overfitting nhẹ hơn do tốc độ hội tụ chậm hơn.
+- **Adam mini-batch**: overfitting rõ rệt (train loss 0.002, val loss 1.80)
+- **Adam full-batch**: overfitting nhẹ (train loss 0.432, val loss 0.666)
+- **QuickProp**: không overfitting ở cả hai chế độ — nhưng do underfitting (mô hình chưa học được)
 
-QuickProp không xuất hiện overfitting ở cả hai chế độ. Tuy nhiên, đây không phải ưu điểm — mô hình ở trạng thái underfitting, chưa học được pattern trong dữ liệu.
+### 5.5. Kết luận
 
-### 5.5. Hạn chế
-
-- Learning rate (0.01) và max_delta (5.0) của QuickProp chưa được tối ưu. Các giá trị này có thể cần điều chỉnh riêng cho kiến trúc LSTM.
-- Adam không sử dụng regularization (dropout, weight decay), dẫn đến overfitting ở chế độ mini-batch.
-- Tập dữ liệu nhỏ (2000 mẫu) hạn chế khả năng tổng quát hóa.
-- QuickProp chỉ được kiểm tra với 1 bộ hyperparameter. Kết quả có thể khác với learning rate nhỏ hơn hoặc max_delta thấp hơn.
-
-### 5.6. Kết luận
-
-Trên bài toán phân tích cảm xúc IMDB với LSTM, Adam hội tụ tốt ở cả hai chế độ, đạt accuracy tốt nhất 70.70% (mini-batch) và 67.10% (full-batch). QuickProp không hội tụ hiệu quả ở cả hai chế độ: 54.20% (mini-batch) và 52.70% (full-batch). Xấp xỉ parabol bậc hai không phù hợp với loss landscape phi lồi, nhiều chiều của LSTM. QuickProp có thể phù hợp hơn cho các mô hình đơn giản (MLP nông) hoặc bài toán có loss landscape lồi hơn.
+- **Adam**: hội tụ tốt ở cả hai chế độ — 70.70% (mini-batch), 67.10% (full-batch)
+- **QuickProp**: không hội tụ hiệu quả — 54.20% (mini-batch), 52.70% (full-batch)
+- Xấp xỉ parabol bậc hai không phù hợp với loss landscape phi lồi, nhiều chiều của LSTM
+- QuickProp có thể phù hợp hơn cho mô hình đơn giản (MLP nông) hoặc bài toán có loss landscape lồi
 
 ## 6. Hướng dẫn chạy
 
